@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify,redirect,render_template,request,abort
+from flask import Flask, request, jsonify,redirect,render_template,request
 from flask_sqlalchemy import SQLAlchemy
 from flask_marshmallow import Marshmallow
 import os
@@ -9,6 +9,7 @@ from sqlalchemy.orm import sessionmaker
 import re
 from sqlalchemy import ForeignKey
 from sqlalchemy.orm import relationship
+
 
 
  
@@ -35,13 +36,14 @@ user_schema = UserSchema()
 users_schema = UserSchema(many=True)
 
 #CREATE A CLASS RIDE
-class Ride(db.Model):
-    rideId=db.Column(INTEGER(unsigned=True), unique=True, primary_key=True)
+class Ride(db.Model):    
+    rideId=db.Column(db.Integer,primary_key=True)
     created_by = db.Column(db.String(80),db.ForeignKey('user.username'))
     timestamp = db.Column(db.String(30))
     source=db.Column(db.String(20))
     destination=db.Column(db.String(80))
-
+   
+	
     def __init__(self, rideId,created_by,timestamp,source,destination):
         self.rideId=rideId
         self.created_by = created_by
@@ -57,10 +59,13 @@ ride_schema = RideSchema()
 rides_schema = RideSchema(many=True)
 
 
+
+##################create new table User_Ride people 
 #CREATE A CLASS User_Ride
 class User_Ride(db.Model):
     username = db.Column(db.String(30),db.ForeignKey('user.username'),primary_key=True)
     rideId=db.Column(INTEGER(unsigned=True),db.ForeignKey('ride.rideId'), primary_key=True)
+
 
 
     def __init__(self, username, rideId):
@@ -74,6 +79,8 @@ class URSchema(ma.Schema):
 ur_schema = URSchema()
 urs_schema = URSchema(many=True)
 
+
+#------------------(1)
 #1 (ADD USER)
 @app.route("/api/v1/users",methods=["PUT"])    
 def add_user():
@@ -81,9 +88,7 @@ def add_user():
     password = request.json['password']
     if not(re.match(r'^[A-Fa-f0-9]{40}$', password)):
         return jsonify({}),400
-    new_user = User(username,password)
-    
-    
+    new_user = User(username,password) 
     user=User.query.filter_by(username=username).first()
     if user is not None:
         return jsonify({}),400
@@ -92,9 +97,11 @@ def add_user():
          db.session.add(new_user)
          db.session.commit()
          return jsonify({}),201
-         #return user_schema.jsonify(new_user),201
+         
+         #return user_schema.jsonify(new_user),200
    
- 
+
+#-------------------(2)
 # 2.(DELETE USER)
 @app.route("/api/v1/users/<username>", methods=["DELETE"])
 def user_delete(username):
@@ -105,8 +112,8 @@ def user_delete(username):
         db.session.delete(user)
         db.session.commit()
     return jsonify({}),200
-    #return user_schema.jsonify(user),200
- 
+
+
 
 #---------------------(3)
 #3.(CREATE A NEW RIDE)
@@ -126,62 +133,90 @@ def add_ride():
                  new_ride = Ride(rideId,created_by,timestamp,source,destination)
                  db.session.add(new_ride)
                  db.session.commit()
-                 #return ride_schema.jsonify(new_ride),201
+                 #return rides_schema.jsonify(new_ride),200
                  return jsonify({}),201
              except Exception as e:
                  print(e)
-                 abort(400)
+                 return jsonify({}),400
     elif(request.method=="GET"):
         try:
-            source=request.args.get('source')
-            destination=request.args.get('destination')
+            source=request.args.get("source")
+            destination=request.args.get("destination")
             #user=User.query.filter_by(username=username).first()
             ride=Ride.query.filter_by(source=source,destination=destination).all()
-            nowtime=datetime.datetime.now().strftime('%Y-%m-%d:%S-%M-%H')
             json_result=[]
             for result in ride:
                  d={}
                  d["rideId"]=result.rideId
-                 d["username"]=result.created_by
+                 d["username"]=result.created_by  #Ride object has no attribute called username
                  d["timestamp"]=result.timestamp
-                 if(result.timestamp>nowtime):
-                    json_result.append(d)
-            return jsonify(json_result),200
-            #return jsonify(json_result),200
+                 json_result.append(d)
+                 return jsonify(json_result),200
+                 #result = rides_schema.dump(new_ride)
+                 return jsonify(result)
         except Exception as e:
-                 abort(400)
+                 print("hello")
+                 print(e)
+                 return jsonify({}),400
+                 #abort(400)
+    else:
+          pass
 
 ### join ride
-@app.route("/api/v1/rides/<rideId>",methods=["POST","GET"]) 
+@app.route("/api/v1/rides/<rideId>",methods=["POST","GET"])  
 def join_ride(rideId):
     if(request.method=="POST"):
-        username=request.json["username"]
-        ride=Ride.query.filter_by(rideId=rideId).first()
-        user=User.query.filter_by(username=username).first()
-        if(user and ride):
-          new_join=User_Ride(rideId=rideId,username=username)
+       username=request.json["username"]
+       new_join=User_Ride(rideId=rideId,username=username)
+      
+       ride=Ride.query.filter_by(rideId=rideId).first()
+       if ride is None:
+          return jsonify({}),200
+       user=User.query.filter_by(username=username).first()
+       if user is None:
+          return jsonify({}),400
+       if (user and ride):
           db.session.add(new_join)
           db.session.commit()
           return jsonify({}),200
-        else:
-            abort(400)
+
 
     elif(request.method=="GET"):
        ride=Ride.query.filter_by(rideId=rideId).first()
-       if(ride is None):
-            abort(400)
        users=User_Ride.query.filter_by(rideId=rideId).all()
+       print("hhhhhhhhh")
        d={}
        d['rideId']=ride.rideId  
        d['created_by']=ride.created_by
        d['timestamp']=ride.timestamp
        d['source']=ride.source
        d['destination']=ride.destination
-       d["users"]=list()
        for i in users:
            d["users"].append(i.username)
-       return jsonify(d),200
+       return jsonify(d)
+       return jsonify({}),200
+    else:
+         
+        
 
+
+'''#5.try.list all the details of a given rides             ========?????
+@app.route('/api/v1/rides',methods=['GET'])
+def get_all_rides():
+    if request.method =='GET':
+        results = Ride.query.filter_by().all()
+        json_results = []
+        for result in results:
+            d = {
+                'rideId':result.rideId,
+                'created_by':result.created_by,
+                'timestamp':result.timestamp,
+                'source':result.source,
+                'destination':result.destination
+            }
+            json_results.append(d)
+        return jsonify(json_results)
+'''
 
 
 #---------------------------(7)
@@ -195,7 +230,9 @@ def ride_delete(rideId):
         db.session.delete(ride)
         db.session.commit()
 
-    return jsonify({}),200 
+    #return user_schema.jsonify(ride),200 
+    return jsonify({}),200
+
 
 #8.write to db 
 @app.route("/api/v1/db/write", methods=["POST"])
@@ -229,12 +266,13 @@ def writeDD():
 
    
 
+
 #9.read from table
 @app.route("/api/v1/db/read",methods=['POST'])
 def readdb():
 
    table=request.json['table']
-   column=request.json['column']
+   column=request.json['columns']
    where_val=request.json['where']
    #var=db.session.execute("select * from User where username Like '"+username+"' and password Like '"+password+"'")
    var=db.session.execute("select "+ column + " from " + table + " where " + where_val)
@@ -243,8 +281,7 @@ def readdb():
    return jsonify({}),200
 
 
-  
-
+ 
 
 if __name__ == '__main__':
     app.run(debug=True)
